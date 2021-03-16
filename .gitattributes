@@ -1,0 +1,2 @@
+lib/puff.c filter=lfs diff=lfs merge=lfs -text
+lib/puff.h filter=lfs diff=lfs merge=lfs -text

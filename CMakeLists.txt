@@ -4,6 +4,7 @@ set (CMAKE_CXX_STANDARD 17)
 project (kwarktree)
 
 include_directories (${CMAKE_HOME_DIRECTORY}/src)
+include_directories (${CMAKE_HOME_DIRECTORY}/lib)
 add_executable (
     main
     WIN32

@@ -80,14 +80,21 @@ WinMain(
 
     FILE* pakFile;
     LERROR(fopen_s(&pakFile, fname, "rb"));
+    INFO("File opened");
 
     auto buffer = (char*)malloc(stat.st_size);
+    INFO("Data allocated");
+
     auto bytesRead = fread(buffer, 1, stat.st_size, pakFile);
     LERROR(bytesRead != stat.st_size);
-    parsePAK(buffer, stat.st_size);
-    free(buffer);
+    INFO("PAK file read");
 
-    INFO("Done.");
+    u8* bspBytes = loadFileFromPAK(buffer, stat.st_size, "maps/q3dm17.bsp");
+    free(buffer);
+    INFO("BSP file unpacked");
+
+    free(bspBytes);
+    INFO("Memory freed");
 
     return 0;
 }

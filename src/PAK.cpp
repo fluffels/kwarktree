@@ -1,3 +1,5 @@
+#include "puff.c"
+
 #define READ(buffer, type, offset) *(type*)(buffer + offset)
 
 #pragma pack(push, 1)
@@ -31,12 +33,27 @@ struct CDRecord {
     u32 externalFileAttributes;
     u32 localFileHeaderOffset;
 };
+
+struct Header {
+    char sig[4];
+    u16 requiredVersion;
+    u16 flags;
+    u16 method;
+    u16 modTime;
+    u16 modDate;
+    u32 crc;
+    u32 compressedSize;
+    u32 uncompressedSize;
+    u16 fnameLength;
+    u16 extraFieldLength;
+};
 #pragma pack(pop)
 
-void
-parsePAK(
+u8*
+loadFileFromPAK(
     char* buffer,
-    i64 bufferSize
+    i64 bufferSize,
+    const char* mapName
 ) {
     if (strncmp(buffer, "PK", 2)) {
         FATAL("not a zip file");
@@ -64,12 +81,11 @@ parsePAK(
 
     u16 index = 0;
     char* ptr = buffer + eocd.cdrOffset;
-    auto mapName = "maps/q3dm17.bsp";
+    CDRecord* record = nullptr;
     auto mapNameLength = strlen(mapName);
     while (index < eocd.cdrCount) {
-        auto record = (CDRecord*)ptr;
+        record = (CDRecord*)ptr;
         char* fname = ptr + sizeof(CDRecord);
-        INFO("%.*s", record->fnameLength, fname);
         if ((record->fnameLength == mapNameLength) &&
             (strncmp(mapName, fname, record->fnameLength) == 0))
             break;
@@ -79,4 +95,20 @@ parsePAK(
         ptr += record->fileCommentLength;
         index++;
     }
+
+    auto localHeader = (Header*)(buffer + record->localFileHeaderOffset);
+    ptr = buffer +
+        record->localFileHeaderOffset +
+        sizeof(Header) +
+        localHeader->fnameLength +
+        localHeader->extraFieldLength;
+    
+    unsigned long destlen = localHeader->uncompressedSize;
+    u8* dest = (u8*)malloc(destlen);
+    unsigned long srclen = localHeader->compressedSize;
+    u8* src = (u8*)ptr;
+
+    puff(dest, &destlen, src, &srclen);
+
+    return dest;
 }
