@@ -64,10 +64,15 @@ parsePAK(
 
     u16 index = 0;
     char* ptr = buffer + eocd.cdrOffset;
+    auto mapName = "maps/q3dm17.bsp";
+    auto mapNameLength = strlen(mapName);
     while (index < eocd.cdrCount) {
         auto record = (CDRecord*)ptr;
         char* fname = ptr + sizeof(CDRecord);
         INFO("%.*s", record->fnameLength, fname);
+        if ((record->fnameLength == mapNameLength) &&
+            (strncmp(mapName, fname, record->fnameLength) == 0))
+            break;
         ptr += sizeof(CDRecord);
         ptr += record->fnameLength;
         ptr += record->extraFieldLength;
