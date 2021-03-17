@@ -82,6 +82,11 @@ WinMain(
     LERROR(fopen_s(&pakFile, fname, "rb"));
     INFO("File opened");
 
+    // TODO: This malloc is relatively expensive, as is the read following it.
+    // It might be worth checking to see if mmap (or the Windows equivalent)
+    // is faster since the program is reading relatively small chunks of data
+    // in a random pattern instead of sequentially going through the whole
+    // ~400 MB file.
     auto buffer = (char*)malloc(stat.st_size);
     INFO("Data allocated");
 
