@@ -15,6 +15,29 @@ typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
+typedef float f32;
+typedef double f64;
+
+#pragma pack(push, 1)
+struct Vec3 {
+    f32 x;
+    f32 y;
+    f32 z;
+};
+
+struct TexCoord {
+    f32 s;
+    f32 t;
+};
+
+struct Color {
+    u8 r;
+    u8 g;
+    u8 b;
+    u8 a;
+};
+#pragma pack(pop)
+
 LARGE_INTEGER counterEpoch;
 LARGE_INTEGER counterFrequency;
 FILE* logFile;
@@ -57,6 +80,11 @@ float GetElapsed() {
         strerror_s(buffer, errno); \
         FATAL(buffer); \
     }
+
+#define READ(buffer, type, offset) (type*)(buffer + offset)
+
+#define STB_DS_IMPLEMENTATION
+#include "stb_ds.h"
 
 #include "BSP.cpp"
 #include "PAK.cpp"

@@ -1,7 +1,5 @@
 #include "puff.c"
 
-#define READ(buffer, type, offset) *(type*)(buffer + offset)
-
 #pragma pack(push, 1)
 struct EOCD {
     char sig[4];
@@ -34,7 +32,7 @@ struct CDRecord {
     u32 localFileHeaderOffset;
 };
 
-struct Header {
+struct LocalFileHeader {
     char sig[4];
     u16 requiredVersion;
     u16 flags;
@@ -80,10 +78,10 @@ loadFileFromPAK(
     auto eocd = READ(c, EOCD, 0);
 
     u16 index = 0;
-    char* ptr = buffer + eocd.cdrOffset;
+    char* ptr = buffer + eocd->cdrOffset;
     CDRecord* record = nullptr;
     auto mapNameLength = strlen(mapName);
-    while (index < eocd.cdrCount) {
+    while (index < eocd->cdrCount) {
         record = (CDRecord*)ptr;
         char* fname = ptr + sizeof(CDRecord);
         if ((record->fnameLength == mapNameLength) &&
@@ -96,10 +94,10 @@ loadFileFromPAK(
         index++;
     }
 
-    auto localHeader = (Header*)(buffer + record->localFileHeaderOffset);
+    auto localHeader = (LocalFileHeader*)(buffer + record->localFileHeaderOffset);
     ptr = buffer +
         record->localFileHeaderOffset +
-        sizeof(Header) +
+        sizeof(LocalFileHeader) +
         localHeader->fnameLength +
         localHeader->extraFieldLength;
     
