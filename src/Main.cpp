@@ -58,6 +58,7 @@ float GetElapsed() {
         FATAL(buffer); \
     }
 
+#include "BSP.cpp"
 #include "PAK.cpp"
 
 int
@@ -97,6 +98,9 @@ WinMain(
     u8* bspBytes = loadFileFromPAK(buffer, stat.st_size, "maps/q3dm17.bsp");
     free(buffer);
     INFO("BSP file unpacked");
+
+    parseBSP(bspBytes);
+    INFO("BSP file parsed");
 
     free(bspBytes);
     INFO("Memory freed");
