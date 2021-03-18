@@ -68,6 +68,10 @@ float GetElapsed() {
     LOG("FATAL", __VA_ARGS__);\
     exit(1);
 
+#define WARN(...) LOG("WARN", __VA_ARGS__);
+
+#define ERR(...) LOG("ERROR", __VA_ARGS__);
+
 #define INFO(...)\
     LOG("INFO", __VA_ARGS__)
 
@@ -85,6 +89,9 @@ float GetElapsed() {
 
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
+
+#include "jcwk/FileSystem.cpp"
+#include "jcwk/Vulkan.cpp"
 
 #include "BSP.cpp"
 #include "PAK.cpp"
