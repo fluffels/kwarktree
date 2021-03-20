@@ -533,6 +533,14 @@ WinMain(
     Uniforms uniforms = {};
     {
         matrixInit(uniforms.proj);
+        matrixProjection(
+            vk.swap.extent.width,
+            vk.swap.extent.height,
+            toRadians(45),
+            10.f,
+            .1f,
+            uniforms.proj
+        );
         quaternionInit(uniforms.rotation);
     }
 
