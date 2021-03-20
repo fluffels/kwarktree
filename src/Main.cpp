@@ -190,6 +190,8 @@ struct Uniforms {
 
 #include "puff.c"
 #include "jcwk/FileSystem.cpp"
+#include "jcwk/Win32/DirectInput.cpp"
+#include "jcwk/Win32/Controller.cpp"
 #include "jcwk/Win32/Mouse.cpp"
 #include "jcwk/Vulkan.cpp"
 #include <vulkan/vulkan_win32.h>
@@ -545,6 +547,12 @@ WinMain(
         quaternionInit(uniforms.rotation);
     }
 
+    // Initialize DirectInput.
+    DirectInput directInput(instance);
+    auto mouse = directInput.mouse;
+    auto controller = directInput.controller;
+
+    // Main loop.
     LARGE_INTEGER frameStart = {};
     LARGE_INTEGER frameEnd = {};
     i64 frameDelta = 0;
@@ -574,14 +582,17 @@ WinMain(
             break;
         }
 
+        // Render frame.
         updateUniforms(vk, &uniforms, sizeof(uniforms));
         present(vk, cmds, 1);
 
+        // Frame rate independent movement stuff.
         QueryPerformanceCounter(&frameEnd);
         float frameTime = (frameEnd.QuadPart - frameStart.QuadPart) /
             (float)counterFrequency.QuadPart;
         float moveDelta = DELTA_MOVE_PER_S * frameTime;
 
+        // Keyboard.
         if (keyboard['W']) {
             moveAlongQuaternion(moveDelta, uniforms.rotation, uniforms.eye);
         }
@@ -594,6 +605,13 @@ WinMain(
         if (keyboard['D']) {
             movePerpendicularToQuaternion(moveDelta, uniforms.rotation, uniforms.eye);
         }
+
+        // Mouse.
+        Vec2i mouseDelta = mouse->getDelta();
+        auto mouseDeltaX = mouseDelta.x * MOUSE_SENSITIVITY;
+        auto mouseDeltaY = mouseDelta.y * MOUSE_SENSITIVITY;
+        rotateQuaternionX(mouseDeltaY, uniforms.rotation);
+        rotateQuaternionY(-mouseDeltaX, uniforms.rotation);
     }
 
     free(bspBytes);
