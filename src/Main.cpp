@@ -390,6 +390,10 @@ WinMain(
         free(buffer);
     }
 
+    u32* indices = NULL;
+    u32 indexCount = 0;
+    BSPVertex* vertices = NULL;
+    u32 vertexCount = 0;
     {
         auto& bspHeader = *READ(bspBytes, BSPHeader, 0);
 
@@ -397,8 +401,8 @@ WinMain(
             FATAL("not a valid IBSP file");
         }
 
-        auto vertexCount = bspHeader.vertices.length / sizeof(BSPVertex);
-        auto vertices = (BSPVertex*)(bspBytes + bspHeader.vertices.offset);
+        vertexCount = bspHeader.vertices.length / sizeof(BSPVertex);
+        vertices = (BSPVertex*)(bspBytes + bspHeader.vertices.offset);
 
         auto meshVertexCount = bspHeader.meshVerts.length / sizeof(u32);
         auto meshVertices = (u32*)(bspBytes + bspHeader.meshVerts.offset);
@@ -406,9 +410,144 @@ WinMain(
         auto faceCount = bspHeader.faces.length / sizeof(BSPFace);
         auto faceVertices = (BSPFace*)(bspBytes + bspHeader.faces.offset);
 
+        arrput(indices, 0);
+        arrput(indices, 1);
+        arrput(indices, 2);
+        indexCount = arrlenu(indices);
+
         INFO("BSP file parsed");
-        free(bspBytes);
     }
 
-    return 0;
+    VkCommandBuffer* cmds = NULL;
+    {
+        VulkanPipeline pipeline;
+        initVKPipeline(
+            vk,
+            "default",
+            pipeline
+        );
+
+        VulkanMesh mesh = {};
+        uploadMesh(
+            vk.device,
+            vk.memories,
+            vk.queueFamily,
+            vertices,
+            vertexCount*sizeof(BSPVertex),
+            indices,
+            indexCount*sizeof(u32),
+            mesh
+        );
+
+        updateUniformBuffer(
+            vk.device,
+            pipeline.descriptorSet,
+            0,
+            vk.uniforms.handle
+        );
+
+        u32 framebufferCount = vk.swap.images.size();
+        arrsetlen(cmds, framebufferCount);
+        createCommandBuffers(vk.device, vk.cmdPool, framebufferCount, cmds);
+        for (size_t swapIdx = 0; swapIdx < framebufferCount; swapIdx++) {
+            auto& cmd = cmds[swapIdx];
+            beginFrameCommandBuffer(cmd);
+
+            VkClearValue colorClear;
+            colorClear.color = {};
+            VkClearValue depthClear;
+            depthClear.depthStencil = { 1.f, 0 };
+            VkClearValue clears[] = { colorClear, depthClear };
+
+            VkRenderPassBeginInfo beginInfo = {};
+            beginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+            beginInfo.clearValueCount = 2;
+            beginInfo.pClearValues = clears;
+            beginInfo.framebuffer = vk.swap.framebuffers[swapIdx];
+            beginInfo.renderArea.extent = vk.swap.extent;
+            beginInfo.renderArea.offset = {0, 0};
+            beginInfo.renderPass = vk.renderPass;
+
+            vkCmdBeginRenderPass(cmd, &beginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+            vkCmdBindPipeline(
+                cmd,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                pipeline.handle
+            );
+            vkCmdBindDescriptorSets(
+                cmd,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                pipeline.layout,
+                0,
+                1,
+                &pipeline.descriptorSet,
+                0,
+                nullptr
+            );
+            VkDeviceSize offsets[] = {0};
+
+            vkCmdBindVertexBuffers(
+                cmd,
+                0, 1,
+                &mesh.vBuff.handle,
+                offsets
+            );
+            vkCmdBindIndexBuffer(
+                cmd,
+                mesh.iBuff.handle,
+                0,
+                VK_INDEX_TYPE_UINT32
+            );
+            Vec3 white = {1, 1, 1};
+            vkCmdPushConstants(
+                cmd,
+                pipeline.layout,
+                VK_SHADER_STAGE_VERTEX_BIT,
+                0,
+                sizeof(white),
+                &white
+            );
+            vkCmdDrawIndexed(
+                cmd,
+                indexCount,
+                1, 0, 0, 0
+            );
+
+            vkCmdEndRenderPass(cmd);
+
+            VKCHECK(vkEndCommandBuffer(cmd));
+        }
+    }
+
+    BOOL done = false;
+    int errorCode = 0;
+    while (!done) {
+        MSG msg;
+        BOOL messageAvailable; 
+        do {
+            messageAvailable = PeekMessage(
+                &msg,
+                (HWND)nullptr,
+                0, 0,
+                PM_REMOVE
+            );
+            TranslateMessage(&msg); 
+            if (msg.message == WM_QUIT) {
+                done = true;
+                errorCode = (int)msg.wParam;
+            }
+            DispatchMessage(&msg); 
+        } while(!done && messageAvailable);
+
+        if (!done) {
+            present(vk, cmds, 1);
+        }
+    }
+
+    free(bspBytes);
+    arrfree(indices);
+    arrfree(cmds);
+
+    return errorCode;
 }
