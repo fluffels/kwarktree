@@ -5,6 +5,53 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+LARGE_INTEGER counterEpoch;
+LARGE_INTEGER counterFrequency;
+FILE* logFile;
+
+float GetElapsed() {
+    LARGE_INTEGER t;
+    QueryPerformanceCounter(&t);
+    auto result =
+        (t.QuadPart - counterEpoch.QuadPart)
+        / (float)counterFrequency.QuadPart;
+    return result;
+}
+
+#define TIME()\
+    fprintf(logFile, "[%f]", GetElapsed());
+
+#define LOC()\
+    fprintf(logFile, "[%s:%d]", __FILE__, __LINE__);
+
+#define LOG(level, ...)\
+    LOC()\
+    TIME()\
+    fprintf(logFile, "[%s] ", level);\
+    fprintf(logFile, __VA_ARGS__); \
+    fprintf(logFile, "\n");
+
+#define FATAL(...)\
+    LOG("FATAL", __VA_ARGS__);\
+    exit(1);
+
+#define WARN(...) LOG("WARN", __VA_ARGS__);
+
+#define ERR(...) LOG("ERROR", __VA_ARGS__);
+
+#define INFO(...)\
+    LOG("INFO", __VA_ARGS__)
+
+#define CHECK(x, ...)\
+    if (!x) { FATAL(__VA_ARGS__) }
+
+#define LERROR(x) \
+    if (x) { \
+        char buffer[1024]; \
+        strerror_s(buffer, errno); \
+        FATAL(buffer); \
+    }
+
 typedef int8_t i8;
 typedef int16_t i16;
 typedef int32_t i32;
@@ -18,7 +65,7 @@ typedef uint64_t u64;
 typedef float f32;
 typedef double f64;
 
-#include "jcwk/MathLib.h"
+#include "jcwk/MathLib.cpp"
 
 #pragma pack(push, 1)
 struct TexCoord {
@@ -135,53 +182,6 @@ struct Uniforms {
     Quaternion rotation;
 };
 #pragma pack(pop)
-
-LARGE_INTEGER counterEpoch;
-LARGE_INTEGER counterFrequency;
-FILE* logFile;
-
-float GetElapsed() {
-    LARGE_INTEGER t;
-    QueryPerformanceCounter(&t);
-    auto result =
-        (t.QuadPart - counterEpoch.QuadPart)
-        / (float)counterFrequency.QuadPart;
-    return result;
-}
-
-#define TIME()\
-    fprintf(logFile, "[%f]", GetElapsed());
-
-#define LOC()\
-    fprintf(logFile, "[%s:%d]", __FILE__, __LINE__);
-
-#define LOG(level, ...)\
-    LOC()\
-    TIME()\
-    fprintf(logFile, "[%s] ", level);\
-    fprintf(logFile, __VA_ARGS__); \
-    fprintf(logFile, "\n");
-
-#define FATAL(...)\
-    LOG("FATAL", __VA_ARGS__);\
-    exit(1);
-
-#define WARN(...) LOG("WARN", __VA_ARGS__);
-
-#define ERR(...) LOG("ERROR", __VA_ARGS__);
-
-#define INFO(...)\
-    LOG("INFO", __VA_ARGS__)
-
-#define CHECK(x, ...)\
-    if (!x) { FATAL(__VA_ARGS__) }
-
-#define LERROR(x) \
-    if (x) { \
-        char buffer[1024]; \
-        strerror_s(buffer, errno); \
-        FATAL(buffer); \
-    }
 
 #define READ(buffer, type, offset) (type*)(buffer + offset)
 
@@ -529,6 +529,13 @@ WinMain(
         }
     }
 
+    // Set up state.
+    Uniforms uniforms = {};
+    {
+        matrixInit(uniforms.proj);
+        quaternionInit(uniforms.rotation);
+    }
+
     BOOL done = false;
     int errorCode = 0;
     while (!done) {
@@ -550,6 +557,7 @@ WinMain(
         } while(!done && messageAvailable);
 
         if (!done) {
+            updateUniforms(vk, &uniforms, sizeof(uniforms));
             present(vk, cmds, 1);
         }
     }
