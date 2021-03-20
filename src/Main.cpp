@@ -33,6 +33,102 @@ struct Color {
     u8 a;
 };
 
+struct BSPDirEntry {
+    u32 offset;
+    u32 length;
+};
+
+struct BSPHeader {
+    char sig[4];
+    u32 version;
+    BSPDirEntry entities;
+    BSPDirEntry textures;
+    BSPDirEntry planes;
+    BSPDirEntry nodes;
+    BSPDirEntry leafs;
+    BSPDirEntry leafFaces;
+    BSPDirEntry leafBrushes;
+    BSPDirEntry models;
+    BSPDirEntry brushes;
+    BSPDirEntry brushSides;
+    BSPDirEntry vertices;
+    BSPDirEntry meshVerts;
+    BSPDirEntry effects; 
+    BSPDirEntry faces;
+    BSPDirEntry lightMaps;
+    BSPDirEntry lightVols;
+    BSPDirEntry visData;
+};
+
+struct BSPVertex {
+    Vec3 position;
+    TexCoord texCoord[2];
+    Vec3 normal;
+    Color color;
+};
+
+struct BSPFace {
+    u32 texture;
+    i32 effect;
+    u32 type;
+    u32 vertex;
+    u32 vertexCount;
+    u32 meshVert;
+    u32 meshVertCount;
+    u32 lightMap;
+    u32 lightMapStart[2];
+    u32 lightMapSize[2];
+    Vec3 lightMapWorldOrigin;
+    Vec3 lightMapWorldDirs[2];
+    Vec3 normal;
+    u32 size[2];
+};
+
+struct EOCD {
+    char sig[4];
+    u16 disk;
+    u16 cdrStartDisk;
+    u16 cdrsOnDisk;
+    u16 cdrCount;
+    u32 cdrSize;
+    u32 cdrOffset;
+    u16 commentLength;
+};
+
+struct CDRecord {
+    char sig[4];
+    u16 createVersion;
+    u16 requiredVersion;
+    u16 flags;
+    u16 method;
+    u16 modTime;
+    u16 modDate;
+    u32 crc;
+    u32 compressedSize;
+    u32 uncompressedSize;
+    u16 fnameLength;
+    u16 extraFieldLength;
+    u16 fileCommentLength;
+    u16 startDisk;
+    u16 internalFileAttributes;
+    u32 externalFileAttributes;
+    u32 localFileHeaderOffset;
+};
+
+struct LocalFileHeader {
+    char sig[4];
+    u16 requiredVersion;
+    u16 flags;
+    u16 method;
+    u16 modTime;
+    u16 modDate;
+    u32 crc;
+    u32 compressedSize;
+    u32 uncompressedSize;
+    u16 fnameLength;
+    u16 extraFieldLength;
+};
+
 struct Uniforms {
     float proj[16];
     Vec4 eye;
@@ -92,12 +188,10 @@ float GetElapsed() {
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
 
+#include "puff.c"
 #include "jcwk/FileSystem.cpp"
 #include "jcwk/Vulkan.cpp"
 #include <vulkan/vulkan_win32.h>
-
-#include "BSP.cpp"
-#include "PAK.cpp"
 
 const float DELTA_MOVE_PER_S = 10.f;
 const float MOUSE_SENSITIVITY = 0.1f;
@@ -212,6 +306,7 @@ WinMain(
     INFO("Vulkan initialized");
 
     // Load map.
+    u8* bspBytes;
     {
         auto fname = "pak0.pk3";
 
@@ -234,15 +329,85 @@ WinMain(
         LERROR(bytesRead != stat.st_size);
         INFO("PAK file read");
 
-        u8* bspBytes = loadFileFromPAK(buffer, stat.st_size, "maps/q3dm17.bsp");
-        free(buffer);
+        if (strncmp(buffer, "PK", 2)) {
+            FATAL("not a zip file");
+        }
+
+        if (buffer[2] != 0x03) {
+            FATAL("wrong zip version: %d", buffer[2]);
+        }
+
+        auto c = buffer + bytesRead - 1;
+        while ((c[0] != 'P') &&
+            (c[1] != 'K') &&
+            (c[2] != 5) &&
+            (c[3] != 6) &&
+            (c > buffer + 4)) {
+            c--;
+        }
+
+        auto offset = c - bytesRead;
+        if (offset == 0) {
+            FATAL("invalid zip, no EOCD");
+        }
+
+        auto eocd = READ(c, EOCD, 0);
+
+        u16 index = 0;
+        char* ptr = buffer + eocd->cdrOffset;
+        CDRecord* record = nullptr;
+        auto mapName = "maps/q3dm17.bsp";
+        auto mapNameLength = strlen(mapName);
+        while (index < eocd->cdrCount) {
+            record = (CDRecord*)ptr;
+            char* fname = ptr + sizeof(CDRecord);
+            if ((record->fnameLength == mapNameLength) &&
+                (strncmp(mapName, fname, record->fnameLength) == 0))
+                break;
+            ptr += sizeof(CDRecord);
+            ptr += record->fnameLength;
+            ptr += record->extraFieldLength;
+            ptr += record->fileCommentLength;
+            index++;
+        }
+
+        auto localHeader = (LocalFileHeader*)(buffer + record->localFileHeaderOffset);
+        
+        unsigned long bspLen = localHeader->uncompressedSize;
+        bspBytes = (u8*)malloc(bspLen);
+        unsigned long bspCompressedLen = localHeader->compressedSize;
+        u8* compressedBspBytes = (u8*)(buffer +
+            record->localFileHeaderOffset +
+            sizeof(LocalFileHeader) +
+            localHeader->fnameLength +
+            localHeader->extraFieldLength);
+
+        puff(
+            bspBytes, &bspLen,
+            compressedBspBytes, &bspCompressedLen
+        );
         INFO("BSP file unpacked");
+        free(buffer);
+    }
 
-        parseBSP(bspBytes);
+    {
+        auto& bspHeader = *READ(bspBytes, BSPHeader, 0);
+
+        if (strncmp(bspHeader.sig, "IBSP", 4) != 0) {
+            FATAL("not a valid IBSP file");
+        }
+
+        auto vertexCount = bspHeader.vertices.length / sizeof(BSPVertex);
+        auto vertices = (BSPVertex*)(bspBytes + bspHeader.vertices.offset);
+
+        auto meshVertexCount = bspHeader.meshVerts.length / sizeof(u32);
+        auto meshVertices = (u32*)(bspBytes + bspHeader.meshVerts.offset);
+
+        auto faceCount = bspHeader.faces.length / sizeof(BSPFace);
+        auto faceVertices = (BSPFace*)(bspBytes + bspHeader.faces.offset);
+
         INFO("BSP file parsed");
-
         free(bspBytes);
-        INFO("Memory freed");
     }
 
     return 0;
