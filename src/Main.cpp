@@ -190,6 +190,7 @@ struct Uniforms {
 
 #include "puff.c"
 #include "jcwk/FileSystem.cpp"
+#include "jcwk/Win32/Mouse.cpp"
 #include "jcwk/Vulkan.cpp"
 #include <vulkan/vulkan_win32.h>
 

@@ -20,6 +20,7 @@ add_custom_target(Shaders ALL DEPENDS ${SPIRV_FILES})
 
 include_directories (${CMAKE_HOME_DIRECTORY}/src)
 include_directories (${CMAKE_HOME_DIRECTORY}/lib)
+include_directories (${CMAKE_HOME_DIRECTORY}/lib/jcwk)
 include_directories(${Vulkan_INCLUDE_DIRS})
 add_executable (
     main
@@ -31,4 +32,6 @@ add_executable (
 target_link_libraries(
     main
     ${Vulkan_LIBRARIES}
+    dinput8.lib
+    dxguid.lib
 )
