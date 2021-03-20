@@ -544,9 +544,14 @@ WinMain(
         quaternionInit(uniforms.rotation);
     }
 
+    LARGE_INTEGER frameStart = {};
+    LARGE_INTEGER frameEnd = {};
+    i64 frameDelta = 0;
     BOOL done = false;
     int errorCode = 0;
     while (!done) {
+        QueryPerformanceCounter(&frameStart);
+
         MSG msg;
         BOOL messageAvailable; 
         do {
@@ -564,9 +569,29 @@ WinMain(
             DispatchMessage(&msg); 
         } while(!done && messageAvailable);
 
-        if (!done) {
-            updateUniforms(vk, &uniforms, sizeof(uniforms));
-            present(vk, cmds, 1);
+        if (done) {
+            break;
+        }
+
+        updateUniforms(vk, &uniforms, sizeof(uniforms));
+        present(vk, cmds, 1);
+
+        QueryPerformanceCounter(&frameEnd);
+        float frameTime = (frameEnd.QuadPart - frameStart.QuadPart) /
+            (float)counterFrequency.QuadPart;
+        float moveDelta = DELTA_MOVE_PER_S * frameTime;
+
+        if (keyboard['W']) {
+            moveAlongQuaternion(moveDelta, uniforms.rotation, uniforms.eye);
+        }
+        if (keyboard['S']) {
+            moveAlongQuaternion(-moveDelta, uniforms.rotation, uniforms.eye);
+        }
+        if (keyboard['A']) {
+            movePerpendicularToQuaternion(-moveDelta, uniforms.rotation, uniforms.eye);
+        }
+        if (keyboard['D']) {
+            movePerpendicularToQuaternion(moveDelta, uniforms.rotation, uniforms.eye);
         }
     }
 
