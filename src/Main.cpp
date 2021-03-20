@@ -410,10 +410,19 @@ WinMain(
         auto faceCount = bspHeader.faces.length / sizeof(BSPFace);
         auto faceVertices = (BSPFace*)(bspBytes + bspHeader.faces.offset);
 
-        arrput(indices, 0);
-        arrput(indices, 1);
-        arrput(indices, 2);
-        indexCount = arrlenu(indices);
+        for (int faceIdx = 0; faceIdx < faceCount; faceIdx++) {
+            auto& face = faceVertices[faceIdx];
+            if (face.type != 1) {
+                continue;
+            }
+            for (int i = 0; i < face.meshVertCount; i++) {
+                auto meshVertIdx = face.meshVert + i;
+                auto meshVert = meshVertices[meshVertIdx];
+                auto idx = face.vertex + meshVert;
+                arrput(indices, idx);
+                indexCount++;
+            }
+        }
 
         INFO("BSP file parsed");
     }
