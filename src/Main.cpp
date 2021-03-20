@@ -85,6 +85,13 @@ struct BSPDirEntry {
     u32 length;
 };
 
+struct BSPEntity {
+    char className[255];
+    Vec3 origin;
+    int angle;
+    int spawnflags;
+};
+
 struct BSPHeader {
     char sig[4];
     u32 version;
@@ -393,16 +400,93 @@ WinMain(
         free(buffer);
     }
 
+    // Parse BSP.
     u32* indices = NULL;
     u32 indexCount = 0;
     BSPVertex* vertices = NULL;
     u32 vertexCount = 0;
+    BSPEntity* entities = NULL;
     {
         auto& bspHeader = *READ(bspBytes, BSPHeader, 0);
 
         if (strncmp(bspHeader.sig, "IBSP", 4) != 0) {
             FATAL("not a valid IBSP file");
         }
+
+        // Parse entitites.
+        enum KEY {
+            CLASS_NAME,
+            ORIGIN,
+            ANGLE,
+            SPAWNFLAGS,
+            UNKNOWN
+        };
+        KEY key = UNKNOWN;
+        enum STATE {
+            OUTSIDE_ENTITY,
+            INSIDE_ENTITY,
+            INSIDE_STRING,
+        };
+        STATE state = OUTSIDE_ENTITY;
+        BSPEntity entity;
+
+        u8* ePos = bspBytes + bspHeader.entities.offset;
+        char buffer[255];
+        memset(buffer, '\0', 255);
+        char* bPos = buffer;
+        while(ePos < bspBytes + bspHeader.entities.offset + bspHeader.entities.length) {
+            char c = *ePos;
+            if (state == OUTSIDE_ENTITY) {
+                if (c == '{') {
+                    state = INSIDE_ENTITY;
+                    entity = {};
+                }
+                ePos++;
+            } else if (state == INSIDE_ENTITY) {
+                if (c == '"') {
+                    bPos = buffer;
+                    state = INSIDE_STRING;
+                } else if (*ePos == '}') {
+                    state = OUTSIDE_ENTITY;
+                    arrput(entities, entity);
+                }
+                ePos++;
+            } else if (state == INSIDE_STRING) {
+                if (*ePos == '"') {
+                    state = INSIDE_ENTITY;
+                    *bPos = '\0';
+                    if (key == CLASS_NAME) {
+                        strncpy_s(entity.className, buffer, 255);
+                    } else if (key == ORIGIN) {
+                        char *s = strstr(buffer, " ");
+                        *s = '\0';
+                        entity.origin.x = (float)atoi(buffer);
+
+                        char *n = s + 1;
+                        s = strstr(n, " ");
+                        *s = '\0';
+                        entity.origin.z = (float)-atoi(n);
+
+                        n = s + 1;
+                        entity.origin.y = (float)-atoi(n);
+                    } else if (key == ANGLE) {
+                        entity.angle = atoi(buffer);
+                    } else if (key == SPAWNFLAGS) {
+                        entity.spawnflags = atoi(buffer);
+                    }
+                    if (strcmp("classname", buffer) == 0) key = CLASS_NAME;
+                    else if (strcmp("origin", buffer) == 0) key = ORIGIN;
+                    else if (strcmp("angle", buffer) == 0) key = ANGLE;
+                    else if (strcmp("spawnflags", buffer) == 0) key = SPAWNFLAGS;
+                    else key = UNKNOWN;
+                } else {
+                    *bPos = c;
+                    bPos++;
+                }
+                ePos++;
+            }
+        }
+        INFO("Entities parsed");
 
         vertexCount = bspHeader.vertices.length / sizeof(BSPVertex);
         vertices = (BSPVertex*)(bspBytes + bspHeader.vertices.offset);
@@ -544,7 +628,20 @@ WinMain(
             .1f,
             uniforms.proj
         );
+
         quaternionInit(uniforms.rotation);
+
+        // Find player spawn.
+        for (int i = 0; i < arrlen(entities); i++) {
+            auto& entity = entities[i];
+            if (strcmp(entity.className, "info_player_deathmatch") == 0) {
+                uniforms.eye.x = entity.origin.x;
+                uniforms.eye.y = entity.origin.y;
+                uniforms.eye.z = entity.origin.z;
+                rotateQuaternionY(-(float)entity.angle, uniforms.rotation);
+                break;
+            }
+        }
     }
 
     // Initialize DirectInput.
