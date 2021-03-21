@@ -514,6 +514,7 @@ WinMain(
         INFO("BSP file parsed");
     }
 
+    // Record command buffers.
     VkCommandBuffer* cmds = NULL;
     {
         VulkanPipeline pipeline;
