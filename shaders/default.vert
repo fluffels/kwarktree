@@ -17,7 +17,7 @@ layout(location=4) in float inColor;
 layout(location=0) out vec3 outColor;
 
 void main() {
-    vec4 p = vec4(inPosition, 1.f);
+    vec4 p = vec4(inPosition.x, -inPosition.z, inPosition.y, 1.f);
     p -= uniforms.eye;
     p = rotate_vertex_position(uniforms.rotation, p);
     gl_Position = uniforms.proj * p;
