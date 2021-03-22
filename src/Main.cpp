@@ -114,6 +114,12 @@ struct BSPHeader {
     BSPDirEntry visData;
 };
 
+struct BSPTexture {
+    char name[64];
+    u32 flags;
+    u32 contents;
+};
+
 struct BSPVertex {
     Vec3 position;
     TexCoord texCoord[2];
@@ -194,6 +200,15 @@ struct Uniforms {
 
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_NO_PNG
+#define STBI_NO_BMP
+#define STBI_NO_PSD
+#define STBI_NO_GIF
+#define STBI_NO_HDR
+#define STBI_NO_PIC
+#define STBI_NO_PNM
+#include "stb_image.h"
 
 #include "puff.c"
 #include "jcwk/FileSystem.cpp"
@@ -228,6 +243,63 @@ WindowProc(
             break;
     }
     return DefWindowProc(window, message, wParam, lParam);
+}
+
+CDRecord*
+findFileInPAK(
+    char* pakBytes,
+    EOCD& eocd,
+    const char* path
+) {
+    auto pathLength = strlen(path);
+    u16 index = 0;
+    char* ptr = pakBytes + eocd.cdrOffset;
+    CDRecord* record;
+    while (index < eocd.cdrCount) {
+        record = (CDRecord*)ptr;
+        char* fname = ptr + sizeof(CDRecord);
+        auto maxLen = pathLength <= record->fnameLength
+            ? pathLength
+            : record->fnameLength;
+        if ((record->fnameLength >= pathLength) &&
+            (strncmp(path, fname, maxLen) == 0))
+            return record;
+        ptr += sizeof(CDRecord);
+        ptr += record->fnameLength;
+        ptr += record->extraFieldLength;
+        ptr += record->fileCommentLength;
+        index++;
+    }
+    return nullptr;
+}
+
+u8*
+unpackFile(
+    char* pakBytes,
+    CDRecord* record,
+    u32* uncompressedLength = NULL
+) {
+    auto localHeader = (LocalFileHeader*)(pakBytes + record->localFileHeaderOffset);
+    
+    unsigned long uncompressedLen = localHeader->uncompressedSize;
+    auto result = (u8*)malloc(uncompressedLen);
+    unsigned long compressedLen = localHeader->compressedSize;
+    u8* compressedBytes = (u8*)(pakBytes +
+        record->localFileHeaderOffset +
+        sizeof(LocalFileHeader) +
+        localHeader->fnameLength +
+        localHeader->extraFieldLength);
+
+    puff(
+        result, &uncompressedLen,
+        compressedBytes, &compressedLen
+    );
+
+    if (uncompressedLength) {
+        *uncompressedLength = uncompressedLen;
+    }
+
+    return result;
 }
 
 int
@@ -315,8 +387,9 @@ WinMain(
     initVK(vk);
     INFO("Vulkan initialized");
 
-    // Load map.
-    u8* bspBytes;
+    // Load PAK.
+    char* pakBytes;
+    EOCD* eocd;
     {
         auto fname = "pak0.pk3";
 
@@ -332,27 +405,27 @@ WinMain(
         // is faster since the program is reading relatively small chunks of data
         // in a random pattern instead of sequentially going through the whole
         // ~400 MB file.
-        auto buffer = (char*)malloc(stat.st_size);
+        pakBytes = (char*)malloc(stat.st_size);
         INFO("Data allocated");
 
-        auto bytesRead = fread(buffer, 1, stat.st_size, pakFile);
+        auto bytesRead = fread(pakBytes, 1, stat.st_size, pakFile);
         LERROR(bytesRead != stat.st_size);
         INFO("PAK file read");
 
-        if (strncmp(buffer, "PK", 2)) {
+        if (strncmp(pakBytes, "PK", 2)) {
             FATAL("not a zip file");
         }
 
-        if (buffer[2] != 0x03) {
-            FATAL("wrong zip version: %d", buffer[2]);
+        if (pakBytes[2] != 0x03) {
+            FATAL("wrong zip version: %d", pakBytes[2]);
         }
 
-        auto c = buffer + bytesRead - 1;
+        auto c = pakBytes + bytesRead - 1;
         while ((c[0] != 'P') &&
             (c[1] != 'K') &&
             (c[2] != 5) &&
             (c[3] != 6) &&
-            (c > buffer + 4)) {
+            (c > pakBytes + 4)) {
             c--;
         }
 
@@ -361,43 +434,15 @@ WinMain(
             FATAL("invalid zip, no EOCD");
         }
 
-        auto eocd = READ(c, EOCD, 0);
+        eocd = READ(c, EOCD, 0);
+    }
 
-        u16 index = 0;
-        char* ptr = buffer + eocd->cdrOffset;
-        CDRecord* record = nullptr;
-        auto mapName = "maps/q3dm17.bsp";
-        auto mapNameLength = strlen(mapName);
-        while (index < eocd->cdrCount) {
-            record = (CDRecord*)ptr;
-            char* fname = ptr + sizeof(CDRecord);
-            if ((record->fnameLength == mapNameLength) &&
-                (strncmp(mapName, fname, record->fnameLength) == 0))
-                break;
-            ptr += sizeof(CDRecord);
-            ptr += record->fnameLength;
-            ptr += record->extraFieldLength;
-            ptr += record->fileCommentLength;
-            index++;
-        }
-
-        auto localHeader = (LocalFileHeader*)(buffer + record->localFileHeaderOffset);
-        
-        unsigned long bspLen = localHeader->uncompressedSize;
-        bspBytes = (u8*)malloc(bspLen);
-        unsigned long bspCompressedLen = localHeader->compressedSize;
-        u8* compressedBspBytes = (u8*)(buffer +
-            record->localFileHeaderOffset +
-            sizeof(LocalFileHeader) +
-            localHeader->fnameLength +
-            localHeader->extraFieldLength);
-
-        puff(
-            bspBytes, &bspLen,
-            compressedBspBytes, &bspCompressedLen
-        );
+    // Load map.
+    u8* bspBytes;
+    {
+        CDRecord* record = findFileInPAK(pakBytes, *eocd, "maps/q3dm17.bsp");
+        bspBytes = unpackFile(pakBytes, record);
         INFO("BSP file unpacked");
-        free(buffer);
     }
 
     // Parse BSP.
@@ -488,6 +533,49 @@ WinMain(
         }
         INFO("Entities parsed");
 
+        // Parse textures.
+        auto textureCount = bspHeader.textures.length / sizeof(BSPTexture);
+        auto textures = (BSPTexture*)(bspBytes + bspHeader.textures.offset);
+        for (int i = 0; i < textureCount; i++) {
+            auto& texture = textures[i];
+            if (strcmp(texture.name, "noshader\0") == 0) {
+                continue;
+            }
+            auto* record = findFileInPAK(pakBytes, *eocd, texture.name);
+            if (record == nullptr) {
+                INFO("could not find file: '%s'", texture.name);
+                continue;
+            }
+            u32 tgaLen = 0;
+            auto tgaBytes = unpackFile(pakBytes, record, &tgaLen);
+            int x, y, n;
+            u8* data = stbi_load_from_memory(
+                tgaBytes, tgaLen, &x, &y, &n, 4
+            );
+            if (data == nullptr) {
+                ERR("could not load texture: '%s'", texture.name);
+                continue;
+            } else {
+                VulkanSampler sampler = {};
+                uploadTexture(
+                    vk.device,
+                    vk.memories,
+                    vk.queue,
+                    vk.queueFamily,
+                    vk.cmdPoolTransient,
+                    x,
+                    y,
+                    data,
+                    x * y * 4,
+                    sampler
+                );
+            }
+
+            free(data);
+            free(tgaBytes);
+        }
+
+        // Parse vertices.
         vertexCount = bspHeader.vertices.length / sizeof(BSPVertex);
         vertices = (BSPVertex*)(bspBytes + bspHeader.vertices.offset);
 
@@ -616,6 +704,9 @@ WinMain(
             VKCHECK(vkEndCommandBuffer(cmd));
         }
     }
+    free(pakBytes);
+    free(bspBytes);
+    arrfree(indices);
 
     // Set up state.
     Uniforms uniforms = {};
@@ -711,9 +802,6 @@ WinMain(
         rotateQuaternionX(mouseDeltaY, uniforms.rotation);
         rotateQuaternionY(-mouseDeltaX, uniforms.rotation);
     }
-
-    free(bspBytes);
-    arrfree(indices);
     arrfree(cmds);
 
     return errorCode;
