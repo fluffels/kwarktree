@@ -451,6 +451,7 @@ WinMain(
     BSPVertex* vertices = NULL;
     u32 vertexCount = 0;
     BSPEntity* entities = NULL;
+    VulkanSampler* samplers = NULL;
     {
         auto& bspHeader = *READ(bspBytes, BSPHeader, 0);
 
@@ -534,10 +535,12 @@ WinMain(
         INFO("Entities parsed");
 
         // Parse textures.
-        auto textureCount = bspHeader.textures.length / sizeof(BSPTexture);
         auto textures = (BSPTexture*)(bspBytes + bspHeader.textures.offset);
+        auto textureCount = bspHeader.textures.length / sizeof(BSPTexture);
+        arrsetlen(samplers, textureCount);
         for (int i = 0; i < textureCount; i++) {
             auto& texture = textures[i];
+            auto& sampler = samplers[i];
             if (strcmp(texture.name, "noshader\0") == 0) {
                 continue;
             }
@@ -556,7 +559,6 @@ WinMain(
                 ERR("could not load texture: '%s'", texture.name);
                 continue;
             } else {
-                VulkanSampler sampler = {};
                 uploadTexture(
                     vk.device,
                     vk.memories,
