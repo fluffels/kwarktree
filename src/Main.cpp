@@ -538,6 +538,7 @@ WinMain(
         auto textures = (BSPTexture*)(bspBytes + bspHeader.textures.offset);
         auto textureCount = bspHeader.textures.length / sizeof(BSPTexture);
         arrsetlen(samplers, textureCount);
+        memset(samplers, 0, sizeof(VulkanSampler)*textureCount);
         for (int i = 0; i < textureCount; i++) {
             auto& texture = textures[i];
             auto& sampler = samplers[i];
