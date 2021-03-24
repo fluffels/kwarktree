@@ -218,7 +218,7 @@ struct Uniforms {
 #include "jcwk/Vulkan.cpp"
 #include <vulkan/vulkan_win32.h>
 
-const float DELTA_MOVE_PER_S = 10.f;
+const float DELTA_MOVE_PER_S = 100.f;
 const float MOUSE_SENSITIVITY = 0.1f;
 const float JOYSTICK_SENSITIVITY = 5;
 bool keyboard[VK_OEM_CLEAR] = {};
@@ -446,20 +446,14 @@ WinMain(
     }
 
     // Parse BSP.
-    u32* indices = NULL;
-    u32 indexCount = 0;
-    BSPVertex* vertices = NULL;
-    u32 vertexCount = 0;
+    auto& bspHeader = *READ(bspBytes, BSPHeader, 0);
+    if (strncmp(bspHeader.sig, "IBSP", 4) != 0) {
+        FATAL("not a valid IBSP file");
+    }
+
+    // Parse entitites.
     BSPEntity* entities = NULL;
-    VulkanSampler* samplers = NULL;
     {
-        auto& bspHeader = *READ(bspBytes, BSPHeader, 0);
-
-        if (strncmp(bspHeader.sig, "IBSP", 4) != 0) {
-            FATAL("not a valid IBSP file");
-        }
-
-        // Parse entitites.
         enum KEY {
             CLASS_NAME,
             ORIGIN,
@@ -533,77 +527,83 @@ WinMain(
             }
         }
         INFO("Entities parsed");
-
-        // Parse textures.
-        auto textures = (BSPTexture*)(bspBytes + bspHeader.textures.offset);
-        auto textureCount = bspHeader.textures.length / sizeof(BSPTexture);
-        arrsetlen(samplers, textureCount);
-        memset(samplers, 0, sizeof(VulkanSampler)*textureCount);
-        for (int i = 0; i < textureCount; i++) {
-            auto& texture = textures[i];
-            auto& sampler = samplers[i];
-            if (strcmp(texture.name, "noshader\0") == 0) {
-                continue;
-            }
-            auto* record = findFileInPAK(pakBytes, *eocd, texture.name);
-            if (record == nullptr) {
-                INFO("could not find file: '%s'", texture.name);
-                continue;
-            }
-            u32 tgaLen = 0;
-            auto tgaBytes = unpackFile(pakBytes, record, &tgaLen);
-            int x, y, n;
-            u8* data = stbi_load_from_memory(
-                tgaBytes, tgaLen, &x, &y, &n, 4
-            );
-            if (data == nullptr) {
-                ERR("could not load texture: '%s'", texture.name);
-                continue;
-            } else {
-                uploadTexture(
-                    vk.device,
-                    vk.memories,
-                    vk.queue,
-                    vk.queueFamily,
-                    vk.cmdPoolTransient,
-                    x,
-                    y,
-                    data,
-                    x * y * 4,
-                    sampler
-                );
-            }
-
-            free(data);
-            free(tgaBytes);
-        }
-
-        // Parse vertices.
-        vertexCount = bspHeader.vertices.length / sizeof(BSPVertex);
-        vertices = (BSPVertex*)(bspBytes + bspHeader.vertices.offset);
-
-        auto meshVertexCount = bspHeader.meshVerts.length / sizeof(u32);
-        auto meshVertices = (u32*)(bspBytes + bspHeader.meshVerts.offset);
-
-        auto faceCount = bspHeader.faces.length / sizeof(BSPFace);
-        auto faceVertices = (BSPFace*)(bspBytes + bspHeader.faces.offset);
-
-        for (int faceIdx = 0; faceIdx < faceCount; faceIdx++) {
-            auto& face = faceVertices[faceIdx];
-            if (face.type != 1) {
-                continue;
-            }
-            for (int i = 0; i < face.meshVertCount; i++) {
-                auto meshVertIdx = face.meshVert + i;
-                auto meshVert = meshVertices[meshVertIdx];
-                auto idx = face.vertex + meshVert;
-                arrput(indices, idx);
-                indexCount++;
-            }
-        }
-
-        INFO("BSP file parsed");
     }
+
+    // Parse textures.
+    auto textures = (BSPTexture*)(bspBytes + bspHeader.textures.offset);
+    auto textureCount = bspHeader.textures.length / sizeof(BSPTexture);
+    u32* textureToSampler = NULL;
+    arrsetlen(textureToSampler, textureCount);
+    VulkanSampler* samplers = NULL;
+    for (int i = 0; i < textureCount; i++) {
+        auto& texture = textures[i];
+        auto& sampler = samplers[i];
+        if (strcmp(texture.name, "noshader\0") == 0) {
+            continue;
+        }
+        auto* record = findFileInPAK(pakBytes, *eocd, texture.name);
+        if (record == nullptr) {
+            INFO("could not find file: '%s'", texture.name);
+            continue;
+        }
+        u32 tgaLen = 0;
+        auto tgaBytes = unpackFile(pakBytes, record, &tgaLen);
+        int x, y, n;
+        u8* data = stbi_load_from_memory(
+            tgaBytes, tgaLen, &x, &y, &n, 4
+        );
+        if (data == nullptr) {
+            ERR("could not load texture: '%s'", texture.name);
+            textureToSampler[i] = -1;
+            continue;
+        } else {
+            textureToSampler[i] = arrlenu(samplers);
+            auto sampler = arraddnptr(samplers, 1);
+            uploadTexture(
+                vk.device,
+                vk.memories,
+                vk.queue,
+                vk.queueFamily,
+                vk.cmdPoolTransient,
+                x,
+                y,
+                data,
+                x * y * 4,
+                *sampler
+            );
+        }
+
+        free(data);
+        free(tgaBytes);
+    }
+
+    // Parse vertices.
+    u32 vertexCount = bspHeader.vertices.length / sizeof(BSPVertex);
+    auto vertices = (BSPVertex*)(bspBytes + bspHeader.vertices.offset);
+
+    u32* indices = NULL;
+    u32 indexCount = 0;
+
+    auto meshVertexCount = bspHeader.meshVerts.length / sizeof(u32);
+    auto meshVertices = (u32*)(bspBytes + bspHeader.meshVerts.offset);
+
+    auto faceCount = bspHeader.faces.length / sizeof(BSPFace);
+    auto faces = (BSPFace*)(bspBytes + bspHeader.faces.offset);
+
+    for (int faceIdx = 0; faceIdx < faceCount; faceIdx++) {
+        auto& face = faces[faceIdx];
+        if (face.type != 1) {
+            continue;
+        }
+        for (int i = 0; i < face.meshVertCount; i++) {
+            auto meshVertIdx = face.meshVert + i;
+            auto meshVert = meshVertices[meshVertIdx];
+            auto idx = face.vertex + meshVert;
+            arrput(indices, idx);
+            indexCount++;
+        }
+    }
+    INFO("BSP file parsed");
 
     // Record command buffers.
     VkCommandBuffer* cmds = NULL;
@@ -632,6 +632,15 @@ WinMain(
             pipeline.descriptorSet,
             0,
             vk.uniforms.handle
+        );
+
+        auto samplerCount = arrlenu(samplers);
+        updateCombinedImageSampler(
+            vk.device,
+            pipeline.descriptorSet,
+            1,
+            samplers,
+            samplerCount
         );
 
         u32 framebufferCount = vk.swap.images.size();
@@ -687,20 +696,31 @@ WinMain(
                 0,
                 VK_INDEX_TYPE_UINT32
             );
-            Vec3 white = {1, 1, 1};
-            vkCmdPushConstants(
-                cmd,
-                pipeline.layout,
-                VK_SHADER_STAGE_VERTEX_BIT,
-                0,
-                sizeof(white),
-                &white
-            );
-            vkCmdDrawIndexed(
-                cmd,
-                indexCount,
-                1, 0, 0, 0
-            );
+
+            u32 index = 0;
+            for (u32 faceIdx = 0; faceIdx < faceCount; faceIdx++) {
+                auto& face = faces[faceIdx];
+                u32 samplerIdx = textureToSampler[face.texture];
+                if ((face.type == 1) && (samplerIdx >= 0)) {
+                    vkCmdPushConstants(
+                        cmd,
+                        pipeline.layout,
+                        VK_SHADER_STAGE_VERTEX_BIT,
+                        0,
+                        sizeof(samplerIdx),
+                        &samplerIdx
+                    );
+                    vkCmdDrawIndexed(
+                        cmd,
+                        face.meshVertCount,
+                        1,
+                        index,
+                        0,
+                        0
+                    );
+                    index += face.meshVertCount;
+                }
+            }
 
             vkCmdEndRenderPass(cmd);
 
