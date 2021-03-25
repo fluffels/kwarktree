@@ -705,7 +705,7 @@ WinMain(
                     vkCmdPushConstants(
                         cmd,
                         pipeline.layout,
-                        VK_SHADER_STAGE_VERTEX_BIT,
+                        VK_SHADER_STAGE_FRAGMENT_BIT,
                         0,
                         sizeof(samplerIdx),
                         &samplerIdx
