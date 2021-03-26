@@ -201,6 +201,7 @@ struct Uniforms {
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
 #define STB_IMAGE_IMPLEMENTATION
+#define STBI_FAILURE_USERMSG 
 #define STBI_NO_PNG
 #define STBI_NO_BMP
 #define STBI_NO_PSD
@@ -280,26 +281,40 @@ unpackFile(
     u32* uncompressedLength = NULL
 ) {
     auto localHeader = (LocalFileHeader*)(pakBytes + record->localFileHeaderOffset);
-    
-    unsigned long uncompressedLen = localHeader->uncompressedSize;
-    auto result = (u8*)malloc(uncompressedLen);
+    auto fname = (char*)pakBytes+record->localFileHeaderOffset+sizeof(LocalFileHeader);
+
     unsigned long compressedLen = localHeader->compressedSize;
     u8* compressedBytes = (u8*)(pakBytes +
         record->localFileHeaderOffset +
         sizeof(LocalFileHeader) +
         localHeader->fnameLength +
         localHeader->extraFieldLength);
-
-    puff(
-        result, &uncompressedLen,
-        compressedBytes, &compressedLen
-    );
-
-    if (uncompressedLength) {
+    unsigned long uncompressedLen = localHeader->uncompressedSize;
+    auto result = (u8*)malloc(uncompressedLen);
+    
+    if (localHeader->method == 0) {
+        // File is stored, no uncompression needed.
         *uncompressedLength = uncompressedLen;
-    }
+        memcpy(result, compressedBytes, compressedLen);
+        return result;
+    } else if (localHeader->method == 8) {
+        // File is stored with DEFLATE.
+        auto errorCode = puff(
+            result, &uncompressedLen,
+            compressedBytes, &compressedLen
+        );
+        if (errorCode != 0) {
+            ERR("could not unpack '%.*s': %d", record->fnameLength, fname, errorCode);
+        }
 
-    return result;
+        if (uncompressedLength) {
+            *uncompressedLength = uncompressedLen;
+        }
+
+        return result;
+    }
+    ERR("unsupported compression method '%.*s': %d", record->fnameLength, fname, record->method);
+    return nullptr;
 }
 
 int
@@ -553,9 +568,8 @@ WinMain(
             tgaBytes, tgaLen, &x, &y, &n, 4
         );
         if (data == nullptr) {
-            ERR("could not load texture: '%s'", texture.name);
+            ERR("could not load texture: '%s' (%s)", texture.name, stbi_failure_reason());
             textureToSampler[i] = -1;
-            continue;
         } else {
             textureToSampler[i] = arrlenu(samplers);
             auto sampler = arraddnptr(samplers, 1);
