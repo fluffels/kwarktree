@@ -12,6 +12,7 @@ layout(location=4) in uint inColor;
 
 layout(location=0) out vec4 outColor;
 layout(location=1) out vec2 outTexCoord;
+layout(location=2) out vec2 outLightMapCoord;
 
 void main() {
     vec4 p = vec4(inPosition.x, -inPosition.z, inPosition.y, 1.f);
@@ -23,4 +24,5 @@ void main() {
     outColor.g = ((inColor & 0x0000FF00) >>  8) / 255.f;
     outColor.b = ((inColor & 0x000000FF)      ) / 255.f;
     outTexCoord = inTexCoord;
+    outLightMapCoord = inLightMapCoord;
 }

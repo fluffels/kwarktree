@@ -144,6 +144,10 @@ struct BSPFace {
     u32 size[2];
 };
 
+struct BSPLightMap {
+    u8 values[128][128][3];
+};
+
 struct EOCD {
     char sig[4];
     u16 disk;
@@ -193,6 +197,11 @@ struct Uniforms {
     float proj[16];
     Vec4 eye;
     Quaternion rotation;
+};
+
+struct PushConstants {
+    u32 texIndex;
+    u32 lightIndex;
 };
 #pragma pack(pop)
 
@@ -348,7 +357,7 @@ WinMain(
         window = CreateWindowEx(
             0,
             "MainWindowClass",
-            "Vk Mesh Shader Example",
+            "Kwark Tree",
             WS_POPUP | WS_VISIBLE,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
@@ -558,8 +567,10 @@ WinMain(
         }
         auto* record = findFileInPAK(pakBytes, *eocd, texture.name);
         if (record == nullptr) {
-            INFO("could not find file: '%s'", texture.name);
+            ERR("could not find file: '%s'", texture.name);
             continue;
+        } else {
+            INFO("uploading: '%s'", texture.name);
         }
         u32 tgaLen = 0;
         auto tgaBytes = unpackFile(pakBytes, record, &tgaLen);
@@ -585,11 +596,48 @@ WinMain(
                 x * y * 4,
                 *sampler
             );
+            INFO("uploaded '%s'", texture.name);
         }
 
         free(data);
         free(tgaBytes);
     }
+    INFO("Textures uploaded");
+
+    // Parse lightmaps.
+    u32 lightMapCount = bspHeader.lightMaps.length / sizeof(BSPLightMap);
+    auto lightMaps = (BSPLightMap*)(bspBytes + bspHeader.lightMaps.offset);
+    VulkanSampler* lightMapSamplers = nullptr;
+    arrsetlen(lightMapSamplers, lightMapCount);
+    for (int i = 0; i < lightMapCount; i++) {
+        u8* src = (u8*)(lightMaps + i);
+        u8* end = src + 128 * 128 * 3;
+        u8* data = (u8*)malloc(128 * 128 * 4);
+        u8* dst = data;
+        while (src < end) {
+            *dst++ = *src++;
+            *dst++ = *src++;
+            *dst++ = *src++;
+            *dst++ = 0xff;
+        }
+
+        auto& sampler = lightMapSamplers[i];
+        uploadTexture(
+            vk.device,
+            vk.memories,
+            vk.queue,
+            vk.queueFamily,
+            vk.cmdPoolTransient,
+            128,
+            128,
+            data,
+            128 * 128 * 4,
+            sampler
+        );
+
+        free(data);
+    }
+    INFO("Lightmaps uploaded");
 
     // Parse vertices.
     u32 vertexCount = bspHeader.vertices.length / sizeof(BSPVertex);
@@ -657,6 +705,15 @@ WinMain(
             samplerCount
         );
 
+        auto lightMapSamplerCount = arrlenu(lightMapSamplers);
+        updateCombinedImageSampler(
+            vk.device,
+            pipeline.descriptorSet,
+            2,
+            lightMapSamplers,
+            lightMapSamplerCount
+        );
+
         u32 framebufferCount = vk.swap.images.size();
         arrsetlen(cmds, framebufferCount);
         createCommandBuffers(vk.device, vk.cmdPool, framebufferCount, cmds);
@@ -714,15 +771,17 @@ WinMain(
             u32 index = 0;
             for (u32 faceIdx = 0; faceIdx < faceCount; faceIdx++) {
                 auto& face = faces[faceIdx];
-                u32 samplerIdx = textureToSampler[face.texture];
-                if ((face.type == 1) && (samplerIdx >= 0)) {
+                PushConstants push;
+                push.texIndex = textureToSampler[face.texture];
+                push.lightIndex = face.lightMap;
+                if ((face.type == 1) && (push.texIndex >= 0)) {
                     vkCmdPushConstants(
                         cmd,
                         pipeline.layout,
                         VK_SHADER_STAGE_FRAGMENT_BIT,
                         0,
-                        sizeof(samplerIdx),
-                        &samplerIdx
+                        sizeof(PushConstants),
+                        &push
                     );
                     vkCmdDrawIndexed(
                         cmd,
