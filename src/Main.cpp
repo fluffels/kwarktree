@@ -587,6 +587,33 @@ WinMain(
         );
     }
 
+    // Missing file.
+    {
+        const u8 height = 32;
+        const u8 width = 32;
+        u8 data[width * height * 4];
+        u8* pixel = data;
+        for (int i = 0; i < width * height; i++) {
+            *pixel++ = 0x00;
+            *pixel++ = 0xff;
+            *pixel++ = 0xff;
+            *pixel++ = 0xff;
+        }
+        auto sampler = arraddnptr(samplers, 1);
+        uploadTexture(
+            vk.device,
+            vk.memories,
+            vk.queue,
+            vk.queueFamily,
+            vk.cmdPoolTransient,
+            width,
+            height,
+            data,
+            width * height * 4,
+            *sampler
+        );
+    }
+
     // Textures from BSP.
     for (int i = 0; i < textureCount; i++) {
         auto& texture = textures[i];
@@ -597,6 +624,7 @@ WinMain(
         auto* record = findFileInPAK(pakBytes, *eocd, texture.name);
         if (record == nullptr) {
             ERR("could not find file: '%s'", texture.name);
+            textureToSampler[i] = 1;
             continue;
         } else {
             INFO("uploading: '%s'", texture.name);
