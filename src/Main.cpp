@@ -559,6 +559,35 @@ WinMain(
     u32* textureToSampler = NULL;
     arrsetlen(textureToSampler, textureCount);
     VulkanSampler* samplers = NULL;
+
+    // Missing texture.
+    {
+        const u8 height = 32;
+        const u8 width = 32;
+        u8 data[width * height * 4];
+        u8* pixel = data;
+        for (int i = 0; i < width * height; i++) {
+            *pixel++ = 0xff;
+            *pixel++ = 0;
+            *pixel++ = 0xff;
+            *pixel++ = 0xff;
+        }
+        auto sampler = arraddnptr(samplers, 1);
+        uploadTexture(
+            vk.device,
+            vk.memories,
+            vk.queue,
+            vk.queueFamily,
+            vk.cmdPoolTransient,
+            width,
+            height,
+            data,
+            width * height * 4,
+            *sampler
+        );
+    }
+
+    // Textures from BSP.
     for (int i = 0; i < textureCount; i++) {
         auto& texture = textures[i];
         auto& sampler = samplers[i];
@@ -580,7 +609,7 @@ WinMain(
         );
         if (data == nullptr) {
             ERR("could not load texture: '%s' (%s)", texture.name, stbi_failure_reason());
-            textureToSampler[i] = -1;
+            textureToSampler[i] = 0;
         } else {
             textureToSampler[i] = arrlenu(samplers);
             auto sampler = arraddnptr(samplers, 1);
