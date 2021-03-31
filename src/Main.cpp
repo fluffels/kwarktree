@@ -711,15 +711,14 @@ WinMain(
 
     for (int faceIdx = 0; faceIdx < faceCount; faceIdx++) {
         auto& face = faces[faceIdx];
-        if (face.type != 1) {
-            continue;
-        }
-        for (int i = 0; i < face.meshVertCount; i++) {
-            auto meshVertIdx = face.meshVert + i;
-            auto meshVert = meshVertices[meshVertIdx];
-            auto idx = face.vertex + meshVert;
-            arrput(indices, idx);
-            indexCount++;
+        if ((face.type == 1) || (face.type == 3)) {
+            for (int i = 0; i < face.meshVertCount; i++) {
+                auto meshVertIdx = face.meshVert + i;
+                auto meshVert = meshVertices[meshVertIdx];
+                auto idx = face.vertex + meshVert;
+                arrput(indices, idx);
+                indexCount++;
+            }
         }
     }
     INFO("BSP file parsed");
@@ -831,7 +830,7 @@ WinMain(
                 PushConstants push;
                 push.texIndex = textureToSampler[face.texture];
                 push.lightIndex = face.lightMap;
-                if ((face.type == 1) && (push.texIndex >= 0)) {
+                if ((face.type == 1) || (face.type == 3)) {
                     vkCmdPushConstants(
                         cmd,
                         pipeline.layout,
