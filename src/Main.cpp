@@ -726,13 +726,6 @@ WinMain(
     // Record command buffers.
     VkCommandBuffer* cmds = NULL;
     {
-        VulkanPipeline pipeline;
-        initVKPipeline(
-            vk,
-            "default",
-            pipeline
-        );
-
         VulkanMesh mesh = {};
         uploadMesh(
             vk.device,
@@ -745,26 +738,45 @@ WinMain(
             mesh
         );
 
-        updateUniformBuffer(
-            vk.device,
-            pipeline.descriptorSet,
-            0,
-            vk.uniforms.handle
+        VulkanPipeline defaultPipeline;
+        initVKPipeline(
+            vk,
+            "default",
+            defaultPipeline
         );
-
-        auto samplerCount = arrlenu(samplers);
-        updateCombinedImageSampler(
-            vk.device,
-            pipeline.descriptorSet,
-            1,
-            samplers,
-            samplerCount
+        VulkanPipeline modelPipeline;
+        initVKPipeline(
+            vk,
+            "model",
+            modelPipeline
         );
+        VulkanPipeline pipelines[] = {
+            defaultPipeline,
+            modelPipeline
+        };
+        auto pipelineCount = sizeof(pipelines) / sizeof(VulkanPipeline);
 
+        for (int i = 0; i < pipelineCount; i++) {
+            auto& pipeline = pipelines[i];
+            updateUniformBuffer(
+                vk.device,
+                pipeline.descriptorSet,
+                0,
+                vk.uniforms.handle
+            );
+            auto samplerCount = arrlenu(samplers);
+            updateCombinedImageSampler(
+                vk.device,
+                pipeline.descriptorSet,
+                1,
+                samplers,
+                samplerCount
+            );
+        }
         auto lightMapSamplerCount = arrlenu(lightMapSamplers);
         updateCombinedImageSampler(
             vk.device,
-            pipeline.descriptorSet,
+            defaultPipeline.descriptorSet,
             2,
             lightMapSamplers,
             lightMapSamplerCount
@@ -794,23 +806,7 @@ WinMain(
 
             vkCmdBeginRenderPass(cmd, &beginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-            vkCmdBindPipeline(
-                cmd,
-                VK_PIPELINE_BIND_POINT_GRAPHICS,
-                pipeline.handle
-            );
-            vkCmdBindDescriptorSets(
-                cmd,
-                VK_PIPELINE_BIND_POINT_GRAPHICS,
-                pipeline.layout,
-                0,
-                1,
-                &pipeline.descriptorSet,
-                0,
-                nullptr
-            );
             VkDeviceSize offsets[] = {0};
-
             vkCmdBindVertexBuffers(
                 cmd,
                 0, 1,
@@ -830,10 +826,59 @@ WinMain(
                 PushConstants push;
                 push.texIndex = textureToSampler[face.texture];
                 push.lightIndex = face.lightMap;
-                if ((face.type == 1) || (face.type == 3)) {
+                if (face.type == 3) {
+                    vkCmdBindPipeline(
+                        cmd,
+                        VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        modelPipeline.handle
+                    );
+                    vkCmdBindDescriptorSets(
+                        cmd,
+                        VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        modelPipeline.layout,
+                        0,
+                        1,
+                        &modelPipeline.descriptorSet,
+                        0,
+                        nullptr
+                    );
                     vkCmdPushConstants(
                         cmd,
-                        pipeline.layout,
+                        modelPipeline.layout,
+                        VK_SHADER_STAGE_FRAGMENT_BIT,
+                        0,
+                        sizeof(PushConstants),
+                        &push
+                    );
+                    vkCmdDrawIndexed(
+                        cmd,
+                        face.meshVertCount,
+                        1,
+                        index,
+                        0,
+                        0
+                    );
+                    index += face.meshVertCount;
+                }
+                if (face.type == 1) {
+                    vkCmdBindPipeline(
+                        cmd,
+                        VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        defaultPipeline.handle
+                    );
+                    vkCmdBindDescriptorSets(
+                        cmd,
+                        VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        defaultPipeline.layout,
+                        0,
+                        1,
+                        &defaultPipeline.descriptorSet,
+                        0,
+                        nullptr
+                    );
+                    vkCmdPushConstants(
+                        cmd,
+                        defaultPipeline.layout,
                         VK_SHADER_STAGE_FRAGMENT_BIT,
                         0,
                         sizeof(PushConstants),
