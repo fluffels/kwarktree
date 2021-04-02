@@ -842,23 +842,6 @@ WinMain(
                         0,
                         nullptr
                     );
-                    vkCmdPushConstants(
-                        cmd,
-                        modelPipeline.layout,
-                        VK_SHADER_STAGE_FRAGMENT_BIT,
-                        0,
-                        sizeof(PushConstants),
-                        &push
-                    );
-                    vkCmdDrawIndexed(
-                        cmd,
-                        face.meshVertCount,
-                        1,
-                        index,
-                        0,
-                        0
-                    );
-                    index += face.meshVertCount;
                 }
                 if (face.type == 1) {
                     vkCmdBindPipeline(
@@ -876,9 +859,11 @@ WinMain(
                         0,
                         nullptr
                     );
+                }
+                if ((face.type == 1) || (face.type == 3)) {
                     vkCmdPushConstants(
                         cmd,
-                        defaultPipeline.layout,
+                        modelPipeline.layout,
                         VK_SHADER_STAGE_FRAGMENT_BIT,
                         0,
                         sizeof(PushConstants),
