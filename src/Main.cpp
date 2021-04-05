@@ -929,6 +929,8 @@ WinMain(
     i64 frameDelta = 0;
     BOOL done = false;
     int errorCode = 0;
+    float rotX = 0;
+    float rotY = 0;
     while (!done) {
         QueryPerformanceCounter(&frameStart);
 
@@ -980,9 +982,12 @@ WinMain(
         // Mouse.
         Vec2i mouseDelta = mouse->getDelta();
         auto mouseDeltaX = mouseDelta.x * MOUSE_SENSITIVITY;
+        rotY -= mouseDeltaX;
         auto mouseDeltaY = mouseDelta.y * MOUSE_SENSITIVITY;
-        rotateQuaternionX(mouseDeltaY, uniforms.rotation);
-        rotateQuaternionY(-mouseDeltaX, uniforms.rotation);
+        rotX += mouseDeltaY;
+        quaternionInit(uniforms.rotation);
+        rotateQuaternionY(rotY, uniforms.rotation);
+        rotateQuaternionX(rotX, uniforms.rotation);
     }
     arrfree(cmds);
 
