@@ -196,7 +196,7 @@ struct LocalFileHeader {
 struct Uniforms {
     float proj[16];
     Vec4 eye;
-    Quaternion rotation;
+    Rotor3 rotation;
 };
 
 struct PushConstants {
@@ -529,7 +529,7 @@ WinMain(
                         char *n = s + 1;
                         s = strstr(n, " ");
                         *s = '\0';
-                        entity.origin.z = (float)-atoi(n);
+                        entity.origin.z = (float)atoi(n);
 
                         n = s + 1;
                         entity.origin.y = (float)-atoi(n);
@@ -892,6 +892,8 @@ WinMain(
 
     // Set up state.
     Uniforms uniforms = {};
+    float rotX = 0;
+    float rotY = 0;
     {
         matrixInit(uniforms.proj);
         matrixProjection(
@@ -903,7 +905,7 @@ WinMain(
             uniforms.proj
         );
 
-        quaternionInit(uniforms.rotation);
+        rotor3Init(uniforms.rotation);
 
         // Find player spawn.
         for (int i = 0; i < arrlen(entities); i++) {
@@ -912,7 +914,7 @@ WinMain(
                 uniforms.eye.x = entity.origin.x;
                 uniforms.eye.y = entity.origin.y;
                 uniforms.eye.z = entity.origin.z;
-                rotateQuaternionY(-(float)entity.angle, uniforms.rotation);
+                rotY = -(float)entity.angle;
                 break;
             }
         }
@@ -929,8 +931,6 @@ WinMain(
     i64 frameDelta = 0;
     BOOL done = false;
     int errorCode = 0;
-    float rotX = 0;
-    float rotY = 0;
     while (!done) {
         QueryPerformanceCounter(&frameStart);
 
@@ -967,16 +967,16 @@ WinMain(
 
         // Keyboard.
         if (keyboard['W']) {
-            moveAlongQuaternion(moveDelta, uniforms.rotation, uniforms.eye);
+            // moveAlongQuaternion(moveDelta, uniforms.rotation, uniforms.eye);
         }
         if (keyboard['S']) {
-            moveAlongQuaternion(-moveDelta, uniforms.rotation, uniforms.eye);
+            // moveAlongQuaternion(-moveDelta, uniforms.rotation, uniforms.eye);
         }
         if (keyboard['A']) {
-            movePerpendicularToQuaternion(-moveDelta, uniforms.rotation, uniforms.eye);
+            // movePerpendicularToQuaternion(-moveDelta, uniforms.rotation, uniforms.eye);
         }
         if (keyboard['D']) {
-            movePerpendicularToQuaternion(moveDelta, uniforms.rotation, uniforms.eye);
+            // movePerpendicularToQuaternion(moveDelta, uniforms.rotation, uniforms.eye);
         }
 
         // Mouse.
@@ -985,9 +985,10 @@ WinMain(
         rotY -= mouseDeltaX;
         auto mouseDeltaY = mouseDelta.y * MOUSE_SENSITIVITY;
         rotX += mouseDeltaY;
-        quaternionInit(uniforms.rotation);
-        rotateQuaternionY(rotY, uniforms.rotation);
-        rotateQuaternionX(rotX, uniforms.rotation);
+        rotor3Init(uniforms.rotation);
+        rotorRotateXZ(rotY, uniforms.rotation);
+        // rotorRotateYZ(rotX, uniforms.rotation);
+        rotorRotateXY(rotX, uniforms.rotation);
     }
     arrfree(cmds);
 
