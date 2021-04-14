@@ -5,67 +5,9 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-LARGE_INTEGER counterEpoch;
-LARGE_INTEGER counterFrequency;
-FILE* logFile;
-
-float GetElapsed() {
-    LARGE_INTEGER t;
-    QueryPerformanceCounter(&t);
-    auto result =
-        (t.QuadPart - counterEpoch.QuadPart)
-        / (float)counterFrequency.QuadPart;
-    return result;
-}
-
-#define TIME()\
-    fprintf(logFile, "[%f]", GetElapsed());
-
-#define LOC()\
-    fprintf(logFile, "[%s:%d]", __FILE__, __LINE__);
-
-#define LOG(level, ...)\
-    LOC()\
-    TIME()\
-    fprintf(logFile, "[%s] ", level);\
-    fprintf(logFile, __VA_ARGS__); \
-    fprintf(logFile, "\n");
-
-#define FATAL(...)\
-    LOG("FATAL", __VA_ARGS__);\
-    exit(1);
-
-#define WARN(...) LOG("WARN", __VA_ARGS__);
-
-#define ERR(...) LOG("ERROR", __VA_ARGS__);
-
-#define INFO(...)\
-    LOG("INFO", __VA_ARGS__)
-
-#define CHECK(x, ...)\
-    if (!x) { FATAL(__VA_ARGS__) }
-
-#define LERROR(x) \
-    if (x) { \
-        char buffer[1024]; \
-        strerror_s(buffer, errno); \
-        FATAL(buffer); \
-    }
-
-typedef int8_t i8;
-typedef int16_t i16;
-typedef int32_t i32;
-typedef int64_t i64;
-
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-
-typedef float f32;
-typedef double f64;
-
+#include "jcwk/Logging.h"
 #include "jcwk/MathLib.cpp"
+#include "jcwk/Types.h"
 
 #pragma pack(push, 1)
 struct TexCoord {
@@ -233,7 +175,7 @@ const float MOUSE_SENSITIVITY = 0.1f;
 const float JOYSTICK_SENSITIVITY = 5;
 bool keyboard[VK_OEM_CLEAR] = {};
 
-LRESULT
+LRESULT __stdcall
 WindowProc(
     HWND    window,
     UINT    message,
@@ -326,21 +268,14 @@ unpackFile(
     return nullptr;
 }
 
-int
+int __stdcall
 WinMain(
     HINSTANCE instance,
     HINSTANCE prevInstance,
     LPSTR commandLine,
     int showCommand
 ) {
-    // NOTE: Initialize logging.
-    {
-        auto error = fopen_s(&logFile, "LOG", "w");
-        if (error) return 1;
-
-        QueryPerformanceCounter(&counterEpoch);
-        QueryPerformanceFrequency(&counterFrequency);
-    }
+    initLogging();
 
     // NOTE: Create window.
     HWND window = NULL;
@@ -348,7 +283,7 @@ WinMain(
         WNDCLASSEX windowClassProperties = {};
         windowClassProperties.cbSize = sizeof(windowClassProperties);
         windowClassProperties.style = CS_HREDRAW | CS_VREDRAW;
-        windowClassProperties.lpfnWndProc = WindowProc;
+        windowClassProperties.lpfnWndProc = (WNDPROC)WindowProc;
         windowClassProperties.hInstance = instance;
         windowClassProperties.lpszClassName = "MainWindowClass";
         ATOM windowClass = RegisterClassEx(&windowClassProperties);
@@ -984,7 +919,7 @@ WinMain(
         auto mouseDeltaX = mouseDelta.x * MOUSE_SENSITIVITY;
         rotY -= mouseDeltaX;
         auto mouseDeltaY = mouseDelta.y * MOUSE_SENSITIVITY;
-        rotX += mouseDeltaY;
+        rotX -= mouseDeltaY;
         rotor3Init(uniforms.rotation);
         rotorRotateXZ(rotY, uniforms.rotation);
         // rotorRotateYZ(rotX, uniforms.rotation);
